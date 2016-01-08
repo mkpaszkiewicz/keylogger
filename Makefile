@@ -1,13 +1,13 @@
 ifneq ($(KERNELRELEASE),)
 # kbuild part of makefile
 obj-m  := keylogger.o
-keylogger-y := keylogger.o
 
 else
 # normal makefile
-KDIR ?= /lib/modules/`uname -r`/build
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
-default:
-	$(MAKE) -C $(KDIR) M=$$PWD
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 
 endif
