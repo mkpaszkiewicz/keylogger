@@ -1,6 +1,13 @@
 # Compiled code
 *.o
 
+# Compiled kernel module and accompanying files
+*.mod.c
+*.mod.o
+*.symvers
+*.order
+*.ko
+
 # Temporary files
 *~
 
