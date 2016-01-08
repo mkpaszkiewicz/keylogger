@@ -1,0 +1,8 @@
+# Compiled code
+*.o
+
+# Temporary files
+*~
+
+# Hidden files
+.*
