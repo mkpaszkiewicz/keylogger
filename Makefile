@@ -4,10 +4,10 @@ obj-m := keylogger.o
 
 else
 # normal makefile
-all: deamon
+all: daemon
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
-deamon: daemon.c
+daemon: daemon.c
 	gcc daemon.c -o daemon -std=c99
 
 clean:
