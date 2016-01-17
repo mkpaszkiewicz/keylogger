@@ -8,7 +8,7 @@ all: daemon
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 daemon: daemon.c
-	gcc daemon.c -o daemon -std=c99
+	gcc -pthread daemon.c -o daemon -std=c99
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
