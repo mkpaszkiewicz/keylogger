@@ -13,3 +13,6 @@
 
 # Hidden files
 .*
+
+# Log files
+*.log
