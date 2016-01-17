@@ -1,5 +1,6 @@
 # Compiled code
 *.o
+*.pyc
 
 # Compiled kernel module and accompanying files
 *.mod.c
