@@ -1,0 +1,6 @@
+INFO     [16:26:11 01-17-2016] Starting server...
+INFO     [16:26:15 01-17-2016] Serving request from  127.0.0.1:38246
+INFO     [16:26:15 01-17-2016] Received message with type HELLO from 127.0.0.1:38246
+INFO     [16:26:15 01-17-2016] Received message with type SEND from 127.0.0.1:38246
+INFO     [16:26:15 01-17-2016] Received message with type BYE from 127.0.0.1:38246
+INFO     [16:26:15 01-17-2016] End connection with 127.0.0.1:38246
