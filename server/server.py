@@ -21,9 +21,9 @@ class TCPHandler(socketserver.BaseRequestHandler):
     implements communication with the client.
     """
     def __init__(self, *args):
-        super().__init__(*args)
         self.client_id = -1
         self.new_client = False
+        super().__init__(*args)
 
     def handle(self):
         try:
@@ -155,7 +155,7 @@ class Server(socketserver.TCPServer):
         self.mutex = threading.Lock()
         self.connected_clients_id = []
 
-    def serve_forever(self, poll_interval=0.5):
+    def serve_forever(self):
         self.logger.info('Starting server...')
         super().serve_forever()
 
