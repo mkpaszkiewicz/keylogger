@@ -17,7 +17,7 @@ class ServerMsgTypes(IntEnum):
 class Error(IntEnum):
     UNSUPPORTED_PROTOCOL = 100
     INVALID_ID = 101
-    DECRYPTION_ERROR = 102
+    PARSE_ERROR = 102
     ILLEGAL_MSG_TYPE = 252
     UNKNOWN_MSG_TYPE = 253
     FATAL_ERROR = 255
