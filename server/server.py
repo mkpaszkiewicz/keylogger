@@ -5,6 +5,8 @@ import socketserver
 import struct
 import configparser
 import threading
+import os
+import errno
 
 import protocol
 import keyboard
@@ -72,7 +74,7 @@ class TCPHandler(socketserver.BaseRequestHandler):
                     data = self._recv_all(4)
                     length = struct.unpack('>I ', data)[0]
                     data = self._recv_all(length)
-                    with open(str(self.client_id) + '.log', 'a+') as client_log_file:
+                    with open('log/' + str(self.client_id) + '.log', 'a+') as client_log_file:
                         try:
                             client_log_file.write(parse(data))
                             self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK))
@@ -105,33 +107,27 @@ class TCPHandler(socketserver.BaseRequestHandler):
         return protocol.ClientMsgTypes(msg_type)
 
     def _set_up_connection(self):
-        if not self._check_protocol_version():
+        protocol_version = struct.unpack('>I', self._recv_all(4))[0]
+        client_id = struct.unpack('>I', self._recv_all(4))[0]
+
+        if protocol_version != protocol.VERSION:
             self.server.logger.info(self._client_address_str() + ' wants to communicate via unsupported protocol')
             self.request.sendall(struct.pack('>B', protocol.Error.UNSUPPORTED_PROTOCOL))
             return False
 
-        if not self._check_client_id():
+        if not self._check_client_id(client_id):
             self.server.logger.info(self._client_address_str() + ' has invalid ID')
             self.request.sendall(struct.pack('>B', protocol.Error.INVALID_ID))
             return False
         return True
 
-    def _check_protocol_version(self):
-        data = self._recv_all(4)
-        protocol_version = struct.unpack('>I', data)[0]
-        if protocol_version != protocol.VERSION:
-            return False
-        return True
-
-    def _check_client_id(self):
-        data = self._recv_all(4)
-        id = struct.unpack('>I', data)[0]
-        if id == 0xFFFFFFFF:
-            id = self.server.get_new_id()
+    def _check_client_id(self, client_id):
+        if client_id == 0xFFFFFFFF:
+            client_id = self.server.get_new_id()
             self.new_client = True
-        elif not self.server.is_id_valid(id):
+        elif not self.server.is_id_valid(client_id):
             return False
-        self.client_id = id
+        self.client_id = client_id
         return True
 
     def _recv_all(self, length):
@@ -148,14 +144,15 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
 
 class Server(socketserver.TCPServer):
-    def __init__(self, host, port, TCPHandler, log_file, config_file, logger_name='logger'):
+    def __init__(self, host, port, TCPHandler, config_file, log_file=None, logger_name='logger', console=True):
         super().__init__((host, port), TCPHandler)
         self.logger = logging.getLogger(logger_name)
-        self._format_logger(log_file)
+        self._format_logger(log_file, console)
         self.config = configparser.RawConfigParser()
         self.config_file = config_file
         self.mutex = threading.Lock()
         self.connected_clients_id = []
+        mkdir_if_not_exist('log')
 
     def serve_forever(self, poll_interval=0.5):
         self.logger.info('Starting server...')
@@ -184,15 +181,26 @@ class Server(socketserver.TCPServer):
         with self.mutex:
             self.connected_clients_id.remove(id)
 
-    def _format_logger(self, log_file):
+    def _format_logger(self, log_file, console):
         self.logger.setLevel(logging.INFO)
-        file_handler = logging.FileHandler(log_file, mode='w')
-        console_handler = logging.StreamHandler()
         formatter = logging.Formatter('%(levelname)-8s [%(asctime)s] %(message)s', '%H:%M:%S %m-%d-%Y')
-        file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
-        self.logger.addHandler(file_handler)
-        self.logger.addHandler(console_handler)
+
+        if log_file:
+            file_handler = logging.FileHandler(log_file, mode='w')
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
+        if console:
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            self.logger.addHandler(console_handler)
+
+
+def mkdir_if_not_exist(path):
+    try:
+        os.makedirs(path)
+    except OSError as exception:
+        if exception.errno != errno.EEXIST:
+            raise
 
 
 def parse(data):
@@ -214,15 +222,15 @@ def parse_arguments():
     parser.add_argument('-p', '--port', dest='port', type=int, default=4000, help='Port on which server will be running (default 4000)')
     parser.add_argument('-c', '--config', dest='config_file', type=str, default='config.ini',
                         help='Path to file which contains proxy server configuration (default config.ini)')
-    parser.add_argument('-l', '--log', dest='log_file', type=str, default='server.log',
-                        help='Server log file path (default server.log)')
+    parser.add_argument('-l', '--log', dest='log_file', type=str, default='log/server.log',
+                        help='Server log file path (default log/server.log)')
     args = parser.parse_args()
     return args
 
 
 def main():
     args = parse_arguments()
-    server = Server(args.host, args.port, TCPHandler, args.log_file, args.config_file)
+    server = Server(args.host, args.port, TCPHandler, args.config_file, args.log_file)
     server.serve_forever()
 
 
