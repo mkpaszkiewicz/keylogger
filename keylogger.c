@@ -103,7 +103,7 @@ static int log_key(struct notifier_block *nblock, unsigned long code, void *_par
     }
 
     printk(KERN_ALERT "log_key %d\n", (int) (end-begin));
-    printk(KERN_ALERT "key_value %d\n", (int) param->value);
+    printk(KERN_ALERT "key_value %d %d\n", (int) param->down, (int) param->value);
     printk(KERN_ALERT "Bufsize: %d\n", (int) BUFFER_SIZE);
 
     spin_unlock(&lock);
@@ -194,7 +194,7 @@ static ssize_t device_read(struct file *filp, char *buffer, size_t length, loff_
 
     if (omittedKeys && BUFFER_LEN - BUFFER_SIZE >= 2)
     {
-        BYTE_TO_BUFFER(0xFF);
+        BYTE_TO_BUFFER(0x03);
         BYTE_TO_BUFFER(omittedKeys);
         omittedKeys = 0;
     }
