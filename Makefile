@@ -7,8 +7,8 @@ else
 all: daemon
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
-daemon: daemon.c
-	gcc -pthread daemon.c -o daemon -std=c99
+daemon: daemon.c server_communication.c protocol_messages.c
+	gcc -pthread -std=c99 $^ -o $@
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean

