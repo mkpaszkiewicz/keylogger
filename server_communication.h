@@ -1,7 +1,3 @@
-//
-// Created by konrad on 25.01.16.
-//
-
 #ifndef KEYLOGGER_SERVER_COMMUNICATION_H
 #define KEYLOGGER_SERVER_COMMUNICATION_H
 

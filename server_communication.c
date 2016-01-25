@@ -1,14 +1,11 @@
-//
-// Created by konrad on 25.01.16.
-//
-
 #include <sys/socket.h>
 #include <stdio.h>
 #include <netinet/in.h>
 #include "server_communication.h"
 #include "protocol_messages.h"
 
-int sendDataToServer(int fd, char* buffer, int size, uint32_t *machineId) {
+int sendDataToServer(int fd, char* buffer, int size, uint32_t *machineId)
+{
     char helperBuffer[HELPER_BUFFER_SIZE];
     // say hello
     struct hello_msg helloMsg = buildHelloMsg(PROTOCOL_VERSION, *machineId);
@@ -19,10 +16,12 @@ int sendDataToServer(int fd, char* buffer, int size, uint32_t *machineId) {
 
     // get response (with id, if not present)
     recv(fd, helperBuffer, 1, 0);
-    if (helperBuffer[0] == 0) {
+    if (helperBuffer[0] == 0)
+    {
         printf("-> OK\n");
     }
-    else if (helperBuffer[0] == 1) {
+    else if (helperBuffer[0] == 1)
+    {
         recv(fd, helperBuffer, sizeof(struct ok_id_data_header), 0);
         struct ok_id_data_header hdr = deserializeOkIdDataHeader(helperBuffer);
         // update id
@@ -30,7 +29,8 @@ int sendDataToServer(int fd, char* buffer, int size, uint32_t *machineId) {
         // save id to file, if received TODO
         printf("-> OKIdData: %d %d\n", hdr.machineId, hdr.dataSize);
     }
-    else {
+    else
+    {
         printf("-> ??? (%d)\n", helperBuffer[0]);
         return 0;
     }
@@ -43,7 +43,8 @@ int sendDataToServer(int fd, char* buffer, int size, uint32_t *machineId) {
 
     // get ok
     recv(fd, helperBuffer, 1, 0);
-    if (helperBuffer[0] == 0) {
+    if (helperBuffer[0] == 0)
+    {
         printf("-> OK\n");
     }
 
