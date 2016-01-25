@@ -14,7 +14,7 @@
 int isRunning = 1;
 int machineId = -1;
 unsigned int interval = 3;
-unsigned int bigInterval = 30;
+unsigned int bigInterval = 10;
 char toSendBuffer[BIG_BUFFER_SIZE];
 int toSendBufferSize = 0;
 pthread_mutex_t toSendBufferMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -24,15 +24,16 @@ int connectionfd = -1;
 pthread_t connectionThread;
 
 void* connectionThreadWorker(void* nothing) {
-    connectionfd = socket(AF_INET, SOCK_STREAM, 0);
     while (isRunning) {
         // wait, until big buffer empty TODO
+        while(toSendBufferSize == 0) {sleep(1);}
 
 
 
 
 
         while(isRunning) {
+            connectionfd = socket(AF_INET, SOCK_STREAM, 0);
             // try to connect
             while (connect(connectionfd, (const struct sockaddr *) &addr, sizeof(addr)) == -1) {
                 fprintf(stderr, "Can't connect, retrying in %u seconds...\n", interval);
@@ -41,8 +42,10 @@ void* connectionThreadWorker(void* nothing) {
             // lock bigbuffer
             int status = 0;    // 0 -> not ok, 1 -> ok
             pthread_mutex_lock(&toSendBufferMutex);
-            // send data TODO
+            // send data TODO errors
             status = sendDataToServer(connectionfd, toSendBuffer, toSendBufferSize, (uint32_t *) &machineId);
+            // set size to 0
+            if (status) toSendBufferSize = 0;
             // unlock bigbuffer
             pthread_mutex_unlock(&toSendBufferMutex);
             close(connectionfd);
