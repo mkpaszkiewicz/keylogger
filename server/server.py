@@ -158,6 +158,10 @@ class Server(socketserver.TCPServer):
         self.logger.info('Starting server...')
         super().serve_forever(poll_interval)
 
+    def shutdown(self):
+        self.logger.info('Shutting down...')
+        super().shutdown()
+
     def get_new_id(self):
         with self.mutex:
             self.config.read(self.config_file)
