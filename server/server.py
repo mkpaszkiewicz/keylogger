@@ -219,7 +219,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Keylogger server')
     parser.add_argument('-H', '--host', dest='host', type=str, default='localhost',
                         help='Address on which server will be running (default localhost)')
-    parser.add_argument('-p', '--port', dest='port', type=int, default=4000, help='Port on which server will be running (default 4000)')
+    parser.add_argument('-p', '--port', dest='port', type=int, default=2000, help='Port on which server will be running (default 2000)')
     parser.add_argument('-c', '--config', dest='config_file', type=str, default='config.ini',
                         help='Path to file which contains proxy server configuration (default config.ini)')
     parser.add_argument('-l', '--log', dest='log_file', type=str, default='log/server.log',
@@ -231,7 +231,11 @@ def parse_arguments():
 def main():
     args = parse_arguments()
     server = Server(args.host, args.port, TCPHandler, args.config_file, args.log_file)
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        server.shutdown()
+        server.server_close()
 
 
 if __name__ == '__main__':
