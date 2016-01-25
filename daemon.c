@@ -19,9 +19,6 @@ int toSendBufferSize = 0;
 
 int machineId = -1;
 
-unsigned int interval = 3;
-unsigned int bigInterval = 10;
-
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
@@ -52,14 +49,13 @@ void* connectionThreadWorker(void* nothing)
             sleep(interval);
         }
 
-        // 0 -> not ok, 1 -> ok
-        int status = 0;
+        int status = -1;
         pthread_mutex_lock(&mutex);
 
         // send data
         status = sendDataToServer(connectionfd, toSendBuffer, toSendBufferSize, (uint32_t *) &machineId);
         // set size to 0
-        if (status)
+        if (status == 0)
         {
             toSendBufferSize = 0;
             pthread_cond_signal(&cond);

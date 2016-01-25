@@ -32,7 +32,7 @@ int sendDataToServer(int fd, char* buffer, int size, uint32_t *machineId)
     else
     {
         printf("-> ??? (%d)\n", helperBuffer[0]);
-        return 0;
+        return -1;
     }
 
     // send some data
@@ -51,5 +51,5 @@ int sendDataToServer(int fd, char* buffer, int size, uint32_t *machineId)
     // say bye
     struct bye_msg byeMsg = buildByeMsg();
     send(fd, &byeMsg, sizeof(byeMsg), 0);
-    return 1;
+    return 0;
 }
