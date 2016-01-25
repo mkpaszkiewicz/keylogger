@@ -146,13 +146,13 @@ class TCPHandler(socketserver.BaseRequestHandler):
 class Server(socketserver.TCPServer):
     def __init__(self, host, port, TCPHandler, config_file, log_file=None, logger_name='logger', console=True):
         super().__init__((host, port), TCPHandler)
+        mkdir_if_not_exist('log')
         self.logger = logging.getLogger(logger_name)
         self._format_logger(log_file, console)
         self.config = configparser.RawConfigParser()
         self.config_file = config_file
         self.mutex = threading.Lock()
         self.connected_clients_id = []
-        mkdir_if_not_exist('log')
 
     def serve_forever(self, poll_interval=0.5):
         self.logger.info('Starting server...')
