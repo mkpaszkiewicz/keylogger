@@ -48,7 +48,6 @@ int sendDataToServer(int fd, char* buffer, int size, uint32_t *machineId)
         printf("-> OK\n");
     }
 
-
     // say bye
     struct bye_msg byeMsg = buildByeMsg();
     send(fd, &byeMsg, sizeof(byeMsg), 0);
