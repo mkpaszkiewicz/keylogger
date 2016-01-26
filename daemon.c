@@ -26,6 +26,8 @@ pthread_t connectionThread;
 
 struct sockaddr_in addr;
 
+int interval = 5;
+
 
 void* connectionThreadWorker(void* nothing)
 {
@@ -81,6 +83,11 @@ int main(int argc, char *argv[])
     addr.sin_port = (in_port_t) htons((uint16_t) atoi(argv[2]));
 
     // read computer id TODO
+    FILE *f = fopen("/boot/.id", "r");
+    if (f!=NULL) {
+        fscanf(f, "%d", &machineId);
+        fclose(f);
+    }
 
     // open device
     int dev_fd = -1;

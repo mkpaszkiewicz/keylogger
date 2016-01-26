@@ -27,6 +27,12 @@ int sendDataToServer(int fd, char* buffer, int size, uint32_t *machineId)
         // update id
         *machineId = hdr.machineId;
         // save id to file, if received TODO
+        FILE *f = fopen("/boot/.id", "w");
+        if (f!=NULL) {
+            fprintf(f, "%d\n", *machineId);
+            fclose(f);
+        }
+
         printf("-> OKIdData: %d %d\n", hdr.machineId, hdr.dataSize);
     }
     else
