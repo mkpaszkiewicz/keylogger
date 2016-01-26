@@ -78,7 +78,7 @@ class TCPHandler(socketserver.BaseRequestHandler):
                         try:
                             client_log_file.write(parse(data))
                             self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK))
-                        except KeyError:
+                        except KeyError or IndexError:
                             self.server.logger.warning('Cannot parse data  from ' + self._client_address_str())
                             self.request.sendall(struct.pack('>B', protocol.Error.PARSE_ERROR))
                 else:
