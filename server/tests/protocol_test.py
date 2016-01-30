@@ -27,11 +27,10 @@ class ProtocolTest(unittest.TestCase):
         Starts a test server on given address.
         Logs are printed only to file.
         """
-        with open(ProtocolTest.config_file, 'r+') as file:
+        with open(ProtocolTest.config_file, 'w+') as file:
             file.seek(0)
             file.write('[Client ID]\n')
             file.write('id = 2\n')
-            file.truncate()
 
         server.Server.allow_reuse_address = True
         cls.test_server = server.Server(ProtocolTest.HOST, ProtocolTest.PORT, server.TCPHandler, config_file=ProtocolTest.config_file,
