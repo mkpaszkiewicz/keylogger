@@ -17,3 +17,6 @@
 
 # Log files
 *.log
+
+# Documentation and materials
+/documents
