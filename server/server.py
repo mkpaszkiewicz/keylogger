@@ -13,6 +13,17 @@ import keyboard
 
 
 class UnknownMessageType(Exception):
+    """Raised when received message with unknown type"""
+    pass
+
+
+class IllegalMessageType(Exception):
+    """Raised when received message with illegal type"""
+    pass
+
+
+class ConnectionEnd(Exception):
+    """Raised when client closed connection"""
     pass
 
 
@@ -23,6 +34,7 @@ class TCPHandler(socketserver.BaseRequestHandler):
     It is instantiated once per connection to the server,
     implements communication with the client.
     """
+
     def __init__(self, *args):
         self.client_id = -1
         self.new_client = False
@@ -31,73 +43,66 @@ class TCPHandler(socketserver.BaseRequestHandler):
     def handle(self):
         try:
             self.server.logger.info('Serving request from  ' + self._client_address_str())
-
-            msg_type = self._recv_msg_type()
-            if msg_type is not protocol.ClientMsgTypes.HELLO:
-                self.server.logger.warning(
-                    'Received ' + msg_type.name + ' while expecting ' + protocol.ClientMsgTypes.HELLO.name + ' from ' + self._client_address_str())
-                self.request.sendall(struct.pack('>B', protocol.Error.ILLEGAL_MSG_TYPE))
-                self.server.logger.warning('Connection with ' + self._client_address_str() + ' terminated')
-                return
-
-            self.server.logger.info('Received message with type ' + msg_type.name + ' from ' + self._client_address_str())
-
-            while not self._set_up_connection():
-                msg_type = self._recv_msg_type()
-                if msg_type is protocol.ClientMsgTypes.HELLO:
-                    self.server.logger.info('Received message with type ' + msg_type.name + ' from ' + self._client_address_str())
-                    continue
-                elif msg_type is protocol.ClientMsgTypes.BYE:
-                    self.server.logger.info('Received message with type ' + msg_type.name + ' from ' + self._client_address_str())
-                    self.server.logger.info('End connection with ' + self._client_address_str())
-                    return
-                else:
-                    self.server.logger.warning('Received ' + msg_type.name + ' while expecting ' + protocol.ClientMsgTypes.HELLO.name + ' or ' +
-                                               protocol.ClientMsgTypes.BYE.name + ' from ' + self._client_address_str())
-                    self.request.sendall(struct.pack('>B', protocol.Error.ILLEGAL_MSG_TYPE))
-                    self.server.logger.warning('Connection with ' + self._client_address_str() + ' terminated')
-                    return
-
-            if self.new_client:
-                self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK_NEW_ID) + struct.pack('>I', self.client_id) + struct.pack('>I', 0))
-            else:
-                self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK))
+            self._handshake()
 
             while True:
                 msg_type = self._recv_msg_type()
                 if msg_type is protocol.ClientMsgTypes.BYE:
-                    self.server.logger.info('Received message with type ' + msg_type.name + ' from ' + self._client_address_str())
-                    self.server.logger.info('End connection with ' + self._client_address_str())
-                    break
+                    self.preprocess_bye(msg_type)
                 elif msg_type is protocol.ClientMsgTypes.SEND:
-                    self.server.logger.info('Received message with type ' + msg_type.name + ' from ' + self._client_address_str())
-                    data = self._recv_all(4)
-                    length = struct.unpack('>I ', data)[0]
-                    data = self._recv_all(length)
-                    with open('log/' + str(self.client_id) + '.log', 'a+') as client_log_file:
-                        try:
-                            client_log_file.write(parse(data))
-                            self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK))
-                        except KeyError or IndexError:
-                            self.server.logger.warning('Cannot parse data  from ' + self._client_address_str())
-                            self.request.sendall(struct.pack('>B', protocol.Error.PARSE_ERROR))
+                    self.preprocess_send(msg_type)
                 else:
-                    self.server.logger.warning(
-                        'Received ' + msg_type.name + ' while expecting ' + protocol.ClientMsgTypes.SEND.name + ' or ' +
-                        protocol.ClientMsgTypes.BYE.name + ' from ' + self._client_address_str())
-                    self.request.sendall(struct.pack('>B', protocol.Error.ILLEGAL_MSG_TYPE))
-                    self.server.logger.warning('Connection with ' + self._client_address_str() + ' terminated')
-                    return
+                    raise IllegalMessageType()
         except ConnectionError:
             self.server.logger.warning('Connection error from ' + self._client_address_str())
-            self.server.logger.warning('Connection with ' + self._client_address_str() + ' terminated')
         except UnknownMessageType:
             self.server.logger.warning('Received wrong message type from ' + self._client_address_str())
             self.request.sendall(struct.pack('>B', protocol.Error.UNKNOWN_MSG_TYPE))
-            self.server.logger.warning('Connection with ' + self._client_address_str() + ' terminated')
+        except IllegalMessageType:
+            self.server.logger.warning('Received illegal message type from ' + self._client_address_str())
+            self.request.sendall(struct.pack('>B', protocol.Error.ILLEGAL_MSG_TYPE))
+        except ConnectionEnd:
+            pass
         finally:
+            self.server.logger.warning('Connection with ' + self._client_address_str() + ' terminated')
             if self.client_id != -1:
                 self.server.unregister_id(self.client_id)
+
+    def preprocess_hello(self, msg_type):
+        self.server.logger.info('Received message with type ' + msg_type.name + ' from ' + self._client_address_str())
+
+    def preprocess_send(self, msg_type):
+        self.server.logger.info('Received message with type ' + msg_type.name + ' from ' + self._client_address_str())
+        data = self._recv_all(4)
+        length = struct.unpack('>I ', data)[0]
+        data = self._recv_all(length)
+        with open('log/' + str(self.client_id) + '.log', 'a+') as client_log_file:
+            try:
+                client_log_file.write(parse(data))
+                self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK))
+            except KeyError or IndexError:
+                self.server.logger.warning('Cannot parse data  from ' + self._client_address_str())
+                self.request.sendall(struct.pack('>B', protocol.Error.PARSE_ERROR))
+
+    def preprocess_bye(self, msg_type):
+        self.server.logger.info('Received message with type ' + msg_type.name + ' from ' + self._client_address_str())
+        raise ConnectionEnd()
+
+    def _handshake(self):
+        msg_type = self._recv_msg_type()
+        if msg_type is not protocol.ClientMsgTypes.HELLO:
+            raise IllegalMessageType()
+
+        self.server.logger.info('Received message with type ' + msg_type.name + ' from ' + self._client_address_str())
+
+        while not self._set_up_connection():
+            msg_type = self._recv_msg_type()
+            if msg_type is protocol.ClientMsgTypes.HELLO:
+                self.preprocess_hello(msg_type)
+            elif msg_type is protocol.ClientMsgTypes.BYE:
+                self.preprocess_bye(msg_type)
+            else:
+                raise IllegalMessageType()
 
     def _recv_msg_type(self):
         data = self._recv_all(1)
@@ -123,12 +128,16 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
     def _check_client_id(self, client_id):
         if client_id == 0xFFFFFFFF:
-            client_id = self.server.get_new_id()
+            self.client_id = self.server.get_new_id()
             self.new_client = True
-        elif not self.server.is_id_valid(client_id):
-            return False
-        self.client_id = client_id
-        return True
+            self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK_NEW_ID) + struct.pack('>I', self.client_id) + struct.pack('>I', 0))
+            return True
+
+        if self.server.is_id_valid(client_id):
+            self.client_id = client_id
+            self.request.sendall(struct.pack('>B', protocol.ServerMsgTypes.OK))
+            return True
+        return False
 
     def _recv_all(self, length):
         data = b''
@@ -211,9 +220,9 @@ def parse(data):
     result = ''
     for i in range(0, len(data), 2):
         if int(data[i]) == keyboard.LinuxKeyboardAction.DOWN or int(data[i]) == keyboard.LinuxKeyboardAction.HOLD:
-            result += keyboard.LinuxKeycodeMapper[data[i+1]]
+            result += keyboard.LinuxKeycodeMapper[data[i + 1]]
         elif int(data[i]) == keyboard.LinuxKeyboardAction.OMIT:
-            result += ' OMITTED: ' + str(data[i+1]) + ' '
+            result += ' OMITTED: ' + str(data[i + 1]) + ' '
         elif int(data[i]) != keyboard.LinuxKeyboardAction.UP:
             raise KeyError
     return result
