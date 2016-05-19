@@ -3,7 +3,7 @@ Keylogger as Linux kernel module
 
 ###Installation & Configuration
 
-Client side:
+#####Client side:
 
 Go to ```client``` directory and run below commands.
 ```
@@ -12,7 +12,7 @@ $ ./install.sh
 $ make clean
 ```
 
-Server side:
+#####Server side:
 
 Go to ```server``` directory and run below command.
 ```
